@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
@@ -13,7 +14,9 @@ import 'package:uuid/uuid.dart';
 
 import '../../core/constants/app_constants.dart';
 import '../../core/providers/common_providers.dart';
+import '../../core/providers/route_models.dart';
 import '../../core/providers/map_provider.dart';
+import '../../core/providers/user_profile_provider.dart';
 import '../../core/providers/user_provider.dart';
 import '../../core/utils/places_service.dart';
 import '../../core/utils/translation_service.dart';
@@ -1336,7 +1339,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
           ],
         ),
       ),
-      textDirection: TextDirection.ltr,
+      textDirection: ui.TextDirection.ltr,
     )..layout();
 
     textPainter.paint(
@@ -1404,7 +1407,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
           ],
         ),
       ),
-      textDirection: TextDirection.ltr,
+      textDirection: ui.TextDirection.ltr,
     )..layout();
 
     heartPainter.paint(canvas, Offset((size - heartPainter.width) / 2, -2));
@@ -1595,6 +1598,281 @@ class _CategoryChip extends StatelessWidget {
       ),
       side: BorderSide(
         color: selected ? Colors.pinkAccent : Colors.pinkAccent.shade100,
+      ),
+    );
+  }
+}
+
+// SpotDetailDialog for Map Screen
+class _SpotDetailDialog extends ConsumerStatefulWidget {
+  final DateSpot spot;
+  const _SpotDetailDialog({required this.spot});
+  @override
+  ConsumerState<_SpotDetailDialog> createState() => _SpotDetailDialogState();
+}
+
+class _SpotDetailDialogState extends ConsumerState<_SpotDetailDialog> {
+  final _commentController = TextEditingController();
+  bool _isSending = false;
+
+  @override
+  void dispose() {
+    _commentController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _sendComment() async {
+    final text = _commentController.text.trim();
+    if (text.isEmpty || _isSending) return;
+    setState(() => _isSending = true);
+    try {
+      final authorId = ref.read(currentUserProvider);
+      final profile = ref
+          .read(userProfileProvider(authorId))
+          .maybeWhen(data: (profile) => profile, orElse: () => null);
+      final comment = SpotComment(
+        id: const Uuid().v4(),
+        spotId: widget.spot.id,
+        authorId: authorId,
+        authorNickname: profile?.displayName ?? authorId,
+        authorPhotoUrl: profile?.photoUrl,
+        content: text,
+        createdAt: DateTime.now(),
+      );
+      await ref
+          .read(firebaseServiceProvider)
+          .addSpotComment(widget.spot.id, comment);
+      _commentController.clear();
+      if (mounted) {
+        FocusScope.of(context).unfocus();
+      }
+    } finally {
+      if (mounted) setState(() => _isSending = false);
+    }
+  }
+
+  Future<void> _deleteComment(SpotComment comment) async {
+    await ref
+        .read(firebaseServiceProvider)
+        .deleteSpotComment(widget.spot.id, comment.id);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final commentsAsync = ref.watch(spotCommentsProvider(widget.spot.id));
+    final currentUserId = ref.watch(currentUserProvider);
+    final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
+
+    return Container(
+      margin: EdgeInsets.only(top: MediaQuery.of(context).padding.top + 40),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Column(
+        children: [
+          Center(
+            child: Container(
+              margin: const EdgeInsets.symmetric(vertical: 12),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Column(
+              children: [
+                Text(
+                  widget.spot.name,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                if (widget.spot.address != null &&
+                    widget.spot.address!.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    widget.spot.address!,
+                    style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              children: [
+                if (widget.spot.imageUrls.isNotEmpty) ...[
+                  SizedBox(
+                    height: 300,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: PageView.builder(
+                        itemCount: widget.spot.imageUrls.length,
+                        itemBuilder: (context, index) => Image.network(
+                          widget.spot.imageUrls[index],
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                ],
+                const Text(
+                  '코멘트',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 12),
+                commentsAsync.when(
+                  data: (comments) {
+                    if (comments.isEmpty) {
+                      return const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 20),
+                        child: Text(
+                          '아직 작성된 코멘트가 없어요.',
+                          style: TextStyle(color: Colors.grey),
+                          textAlign: TextAlign.center,
+                        ),
+                      );
+                    }
+                    return Column(
+                      children: comments.map((comment) {
+                        final isMine = comment.authorId == currentUserId;
+                        final authorProfile = ref
+                            .watch(userProfileProvider(comment.authorId))
+                            .maybeWhen(
+                              data: (profile) => profile,
+                              orElse: () => null,
+                            );
+                        final authorName =
+                            authorProfile?.displayName ??
+                            comment.authorNickname;
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              CircleAvatar(
+                                radius: 14,
+                                backgroundColor: isMine
+                                    ? Colors.pinkAccent
+                                    : Colors.blueAccent,
+                                child: Text(
+                                  authorName.isEmpty
+                                      ? '?'
+                                      : authorName.characters.first,
+                                  style: const TextStyle(
+                                    fontSize: 10,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Container(
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey[100],
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        authorName,
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 3),
+                                      Text(
+                                        comment.content,
+                                        style: const TextStyle(fontSize: 14),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        DateFormat(
+                                          'MM.dd HH:mm',
+                                        ).format(comment.createdAt),
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.grey[500],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              if (isMine)
+                                IconButton(
+                                  icon: const Icon(
+                                    Icons.close,
+                                    size: 16,
+                                    color: Colors.grey,
+                                  ),
+                                  onPressed: () => _deleteComment(comment),
+                                ),
+                            ],
+                          ),
+                        );
+                      }).toList(),
+                    );
+                  },
+                  loading: () =>
+                      const Center(child: CircularProgressIndicator()),
+                  error: (err, _) => Text('Error: $err'),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            padding: EdgeInsets.fromLTRB(16, 8, 16, 8 + keyboardHeight),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border(top: BorderSide(color: Colors.grey[200]!)),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _commentController,
+                    decoration: const InputDecoration(
+                      hintText: '코멘트를 남겨보세요...',
+                      border: InputBorder.none,
+                      isDense: true,
+                    ),
+                    maxLines: null,
+                  ),
+                ),
+                if (_isSending)
+                  const Padding(
+                    padding: EdgeInsets.all(12.0),
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                else
+                  IconButton(
+                    icon: const Icon(Icons.send, color: Colors.pinkAccent),
+                    onPressed: _sendComment,
+                  ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

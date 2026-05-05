@@ -13,9 +13,11 @@ import 'package:uuid/uuid.dart';
 
 import '../../core/providers/album_provider.dart';
 import '../../core/providers/common_providers.dart';
+import '../../core/providers/route_models.dart';
 import '../../core/providers/map_provider.dart';
 import '../../core/providers/mission_provider.dart';
 import '../../core/providers/user_provider.dart';
+import '../../core/providers/user_profile_provider.dart';
 import '../../core/utils/places_service.dart';
 import '../../core/utils/translation_service.dart';
 
@@ -87,28 +89,28 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
             final currentUser = ref.read(currentUserProvider);
 
             try {
+              final id = const Uuid().v4();
+              final imageUrls = <String>[];
               for (var index = 0; index < selectedImages.length; index++) {
-                final id = const Uuid().v4();
                 final image = selectedImages[index];
                 final imageUrl = await firebaseService.uploadImage(
                   File(image.path),
-                  'albums/$id/${DateTime.now().millisecondsSinceEpoch}.jpg',
+                  'albums/$id/${DateTime.now().millisecondsSinceEpoch}_$index.jpg',
                 );
-                await firebaseService.addAlbumEntry(
-                  AlbumEntry(
-                    id: id,
-                    title: title,
-                    imageUrl: imageUrl,
-                    creatorId: currentUser,
-                    placeName: selectedPlace?.name,
-                    address: selectedPlace?.address,
-                    position: selectedPlace?.position,
-                    timestamp: DateTime.now().add(
-                      Duration(milliseconds: index),
-                    ),
-                  ),
-                );
+                imageUrls.add(imageUrl);
               }
+              await firebaseService.addAlbumEntry(
+                AlbumEntry(
+                  id: id,
+                  title: title,
+                  imageUrls: imageUrls,
+                  creatorId: currentUser,
+                  placeName: selectedPlace?.name,
+                  address: selectedPlace?.address,
+                  position: selectedPlace?.position,
+                  timestamp: DateTime.now(),
+                ),
+              );
               if (dialogContext.mounted) Navigator.pop(dialogContext, true);
             } catch (e) {
               setDialogState(() {
@@ -277,7 +279,7 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
     if (created == true && mounted) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('앨범이 저장되었습니다.')));
+      ).showSnackBar(const SnackBar(content: Text('?⑤쾾????λ릺?덉뒿?덈떎.')));
     }
   }
 
@@ -338,8 +340,8 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
                       children: [
                         const TabBar(
                           tabs: [
-                            Tab(text: '앨범'),
-                            Tab(text: '미션'),
+                            Tab(text: '?⑤쾾'),
+                            Tab(text: '誘몄뀡'),
                           ],
                         ),
                         Expanded(
@@ -435,8 +437,9 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
 }
 
 class _AlbumItem {
+  final String id;
   final String title;
-  final String imageUrl;
+  final List<String> imageUrls;
   final String subtitle;
   final DateTime timestamp;
   final bool isMission;
@@ -447,8 +450,9 @@ class _AlbumItem {
   final String? challengerId;
 
   _AlbumItem({
+    required this.id,
     required this.title,
-    required this.imageUrl,
+    required this.imageUrls,
     required this.subtitle,
     required this.timestamp,
     required this.isMission,
@@ -459,11 +463,14 @@ class _AlbumItem {
     this.challengerId,
   });
 
+  String get imageUrl => imageUrls.isEmpty ? '' : imageUrls.first;
+
   factory _AlbumItem.fromAlbum(AlbumEntry entry) {
     final place = entry.placeName ?? entry.address;
     return _AlbumItem(
+      id: entry.id,
       title: entry.title,
-      imageUrl: entry.imageUrl,
+      imageUrls: entry.imageUrls,
       subtitle: [
         entry.creatorId,
         if (place != null && place.isNotEmpty) place,
@@ -478,8 +485,9 @@ class _AlbumItem {
 
   factory _AlbumItem.fromMission(Mission mission) {
     return _AlbumItem(
+      id: 'mission_${mission.id}',
       title: mission.content,
-      imageUrl: mission.proofImageUrl!,
+      imageUrls: [mission.proofImageUrl!],
       subtitle: [
         'Proposer ${mission.creatorId}',
         if (mission.winnerId != null) 'Challenger ${mission.winnerId}',
@@ -493,24 +501,60 @@ class _AlbumItem {
   }
 }
 
-class _AlbumDetailSheet extends StatefulWidget {
+class _AlbumDetailSheet extends ConsumerStatefulWidget {
   final _AlbumItem item;
 
   const _AlbumDetailSheet({required this.item});
 
   @override
-  State<_AlbumDetailSheet> createState() => _AlbumDetailSheetState();
+  ConsumerState<_AlbumDetailSheet> createState() => _AlbumDetailSheetState();
 }
 
-class _AlbumDetailSheetState extends State<_AlbumDetailSheet> {
+class _AlbumDetailSheetState extends ConsumerState<_AlbumDetailSheet> {
+  final _pageController = PageController();
+  final _commentController = TextEditingController();
   bool _isSaving = false;
+  bool _isSendingComment = false;
+  int _photoIndex = 0;
 
   _AlbumItem get item => widget.item;
+  String get _currentImageUrl => item.imageUrls.isEmpty
+      ? ''
+      : item.imageUrls[_photoIndex.clamp(0, item.imageUrls.length - 1).toInt()];
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    _commentController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
     final placeLabel = _placeLabel(item);
+    final currentUserId = ref.watch(currentUserProvider);
+    final commentsAsync = item.isMission
+        ? const AsyncValue<List<AlbumComment>>.data([])
+        : ref.watch(albumCommentsProvider(item.id));
+    final creatorProfile = ref
+        .watch(userProfileProvider(item.creatorId))
+        .maybeWhen(data: (profile) => profile, orElse: () => null);
+    final proposerProfile = item.proposerId == null
+        ? null
+        : ref
+              .watch(userProfileProvider(item.proposerId!))
+              .maybeWhen(data: (profile) => profile, orElse: () => null);
+    final challengerProfile = item.challengerId == null
+        ? null
+        : ref
+              .watch(userProfileProvider(item.challengerId!))
+              .maybeWhen(data: (profile) => profile, orElse: () => null);
+    final creatorName = creatorProfile?.displayName ?? item.creatorId;
+    final proposerName =
+        proposerProfile?.displayName ?? item.proposerId ?? item.creatorId;
+    final challengerName =
+        challengerProfile?.displayName ?? item.challengerId ?? '';
 
     return Container(
       height: size.height * 0.9,
@@ -550,15 +594,15 @@ class _AlbumDetailSheetState extends State<_AlbumDetailSheet> {
                 if (item.isMission)
                   Text(
                     [
-                      if (item.proposerId != null) '제안자 ${item.proposerId}',
-                      if (item.challengerId != null) '도전자 ${item.challengerId}',
+                      if (item.proposerId != null) '?쒖븞??$proposerName',
+                      if (item.challengerId != null) '?꾩쟾??$challengerName',
                     ].join(' / '),
                     textAlign: TextAlign.center,
                     style: TextStyle(color: Colors.grey[700], fontSize: 12),
                   )
                 else
                   Text(
-                    ['올린 사람 ${item.creatorId}', ?placeLabel].join(' / '),
+                    ['올린 사람 $creatorName', ?placeLabel].join(' / '),
                     textAlign: TextAlign.center,
                     style: TextStyle(color: Colors.grey[700], fontSize: 12),
                   ),
@@ -571,19 +615,65 @@ class _AlbumDetailSheetState extends State<_AlbumDetailSheet> {
               padding: const EdgeInsets.all(16),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(16),
-                child: Container(
-                  color: Colors.grey[100],
-                  child: Image.network(
-                    item.imageUrl,
-                    fit: BoxFit.contain,
-                    width: double.infinity,
-                    errorBuilder: (context, error, stackTrace) =>
-                        const Center(child: Icon(Icons.broken_image, size: 48)),
-                  ),
+                child: Stack(
+                  children: [
+                    Container(
+                      color: Colors.grey[100],
+                      child: PageView.builder(
+                        controller: _pageController,
+                        itemCount: item.imageUrls.length,
+                        onPageChanged: (index) =>
+                            setState(() => _photoIndex = index),
+                        itemBuilder: (context, index) => Image.network(
+                          item.imageUrls[index],
+                          fit: BoxFit.contain,
+                          width: double.infinity,
+                          errorBuilder: (context, error, stackTrace) =>
+                              const Center(
+                                child: Icon(Icons.broken_image, size: 48),
+                              ),
+                        ),
+                      ),
+                    ),
+                    if (item.imageUrls.length > 1)
+                      Positioned(
+                        right: 12,
+                        bottom: 12,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: Colors.black54,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 5,
+                            ),
+                            child: Text(
+                              '${_photoIndex + 1} / ${item.imageUrls.length}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
             ),
           ),
+          if (!item.isMission)
+            _AlbumCommentPanel(
+              commentsAsync: commentsAsync,
+              currentUserId: currentUserId,
+              controller: _commentController,
+              isSending: _isSendingComment,
+              onSend: _sendAlbumComment,
+              onDelete: _deleteAlbumComment,
+            ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             child: SizedBox(
@@ -606,6 +696,52 @@ class _AlbumDetailSheetState extends State<_AlbumDetailSheet> {
     );
   }
 
+  Future<void> _sendAlbumComment() async {
+    final content = _commentController.text.trim();
+    if (content.isEmpty || _isSendingComment || item.isMission) {
+      return;
+    }
+    setState(() => _isSendingComment = true);
+    _commentController.clear();
+    final currentUserId = ref.read(currentUserProvider);
+    final profile = ref
+        .read(userProfileProvider(currentUserId))
+        .maybeWhen(data: (profile) => profile, orElse: () => null);
+    final comment = AlbumComment(
+      id: const Uuid().v4(),
+      albumId: item.id,
+      authorId: currentUserId,
+      authorNickname: profile?.displayName ?? currentUserId,
+      authorPhotoUrl: profile?.photoUrl,
+      content: content,
+      createdAt: DateTime.now(),
+    );
+
+    try {
+      await ref.read(firebaseServiceProvider).addAlbumComment(item.id, comment);
+      if (mounted) {
+        FocusScope.of(context).unfocus();
+      }
+    } catch (e) {
+      _commentController.text = content;
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('?볤? ????ㅽ뙣: $e')));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSendingComment = false);
+      }
+    }
+  }
+
+  Future<void> _deleteAlbumComment(AlbumComment comment) async {
+    await ref
+        .read(firebaseServiceProvider)
+        .deleteAlbumComment(item.id, comment.id);
+  }
+
   Future<void> _showSaveOptions() async {
     var decorated = false;
 
@@ -613,15 +749,15 @@ class _AlbumDetailSheetState extends State<_AlbumDetailSheet> {
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: const Text('저장 방식'),
+          title: const Text('???諛⑹떇'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               SegmentedButton<bool>(
                 segments: const [
-                  ButtonSegment(value: false, label: Text('일반')),
-                  ButtonSegment(value: true, label: Text('테마 1')),
+                  ButtonSegment(value: false, label: Text('?쇰컲')),
+                  ButtonSegment(value: true, label: Text('?뚮쭏 1')),
                 ],
                 selected: {decorated},
                 onSelectionChanged: (value) =>
@@ -630,7 +766,7 @@ class _AlbumDetailSheetState extends State<_AlbumDetailSheet> {
               if (decorated) ...[
                 const SizedBox(height: 12),
                 Text(
-                  '사진 방향에 따라 Hmode/Wmode 배경이 자동 적용됩니다.',
+                  '?ъ쭊 諛⑺뼢???곕씪 Hmode/Wmode 諛곌꼍???먮룞 ?곸슜?⑸땲??',
                   style: TextStyle(color: Colors.grey[600], fontSize: 12),
                 ),
               ],
@@ -661,18 +797,18 @@ class _AlbumDetailSheetState extends State<_AlbumDetailSheet> {
       if (!await Gal.hasAccess()) {
         await Gal.requestAccess();
       }
-      final bytes = await _downloadImageBytes(item.imageUrl);
+      final bytes = await _downloadImageBytes(_currentImageUrl);
       final output = decorated ? await _buildDecoratedImage(bytes) : bytes;
       await Gal.putImageBytes(output, album: 'Our Spring Days');
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('사진을 저장했어요.')));
+      ).showSnackBar(const SnackBar(content: Text('?ъ쭊????ν뻽?댁슂.')));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('저장 실패: $e')));
+      ).showSnackBar(SnackBar(content: Text('????ㅽ뙣: $e')));
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -765,5 +901,172 @@ class _AlbumDetailSheetState extends State<_AlbumDetailSheet> {
     if (address != null && address.isNotEmpty) return address;
     if (place != null && place.isNotEmpty) return place;
     return null;
+  }
+}
+
+class _AlbumCommentPanel extends StatelessWidget {
+  final AsyncValue<List<AlbumComment>> commentsAsync;
+  final String currentUserId;
+  final TextEditingController controller;
+  final bool isSending;
+  final VoidCallback onSend;
+  final ValueChanged<AlbumComment> onDelete;
+
+  const _AlbumCommentPanel({
+    required this.commentsAsync,
+    required this.currentUserId,
+    required this.controller,
+    required this.isSending,
+    required this.onSend,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 170,
+      child: Column(
+        children: [
+          Expanded(
+            child: commentsAsync.when(
+              data: (comments) => comments.isEmpty
+                  ? Center(
+                      child: Text(
+                        '?꾩쭅 肄붾찘?멸? ?놁뼱??',
+                        style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                      ),
+                    )
+                  : ListView.separated(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      itemCount: comments.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 8),
+                      itemBuilder: (context, index) => _AlbumCommentTile(
+                        comment: comments[index],
+                        isMine: comments[index].authorId == currentUserId,
+                        onDelete: () => onDelete(comments[index]),
+                      ),
+                    ),
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (error, _) => Center(child: Text('?볤? ?ㅻ쪟: $error')),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: controller,
+                    minLines: 1,
+                    maxLines: 2,
+                    decoration: InputDecoration(
+                      hintText: '코멘트를 남겨보세요',
+                      isDense: true,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                    ),
+                    onSubmitted: (_) => onSend(),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton.filled(
+                  onPressed: isSending ? null : onSend,
+                  icon: isSending
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.send_rounded),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AlbumCommentTile extends ConsumerWidget {
+  final AlbumComment comment;
+  final bool isMine;
+  final VoidCallback onDelete;
+
+  const _AlbumCommentTile({
+    required this.comment,
+    required this.isMine,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final profile = ref
+        .watch(userProfileProvider(comment.authorId))
+        .maybeWhen(data: (profile) => profile, orElse: () => null);
+    final authorName = profile?.displayName ?? comment.authorNickname;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisAlignment: isMine
+          ? MainAxisAlignment.end
+          : MainAxisAlignment.start,
+      children: [
+        Flexible(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: isMine ? const Color(0xFFFFE7EF) : Colors.grey[100],
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Column(
+                crossAxisAlignment: isMine
+                    ? CrossAxisAlignment.end
+                    : CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    authorName,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(comment.content),
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        DateFormat('MM.dd HH:mm').format(comment.createdAt),
+                        style: TextStyle(fontSize: 10, color: Colors.grey[600]),
+                      ),
+                      if (isMine) ...[
+                        const SizedBox(width: 8),
+                        GestureDetector(
+                          onTap: onDelete,
+                          child: Text(
+                            '??젣',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.grey[700],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -15,6 +16,18 @@ import 'route_models.dart';
 final travelRouteStreamProvider = StreamProvider<List<TravelRoute>>((ref) {
   final firebaseService = ref.watch(firebaseServiceProvider);
   return firebaseService.getTravelRouteStream();
+});
+
+final routeCommentsProvider = StreamProvider.family<List<RouteComment>, String>(
+  (ref, routeId) {
+    final firebaseService = ref.watch(firebaseServiceProvider);
+    return firebaseService.getRouteCommentStream(routeId);
+  },
+);
+
+final routeGroupStreamProvider = StreamProvider<List<RouteGroup>>((ref) {
+  final firebaseService = ref.watch(firebaseServiceProvider);
+  return firebaseService.getRouteGroupStream();
 });
 
 final routeTrackingProvider =
@@ -80,6 +93,10 @@ class RouteTrackingState {
 class RouteTrackingNotifier extends Notifier<RouteTrackingState> {
   static const _travelNotificationId = 75415;
   static const _travelNotificationChannelId = 'geolocator_channel_01';
+  static const _maxAcceptedAccuracyMeters = 45.0;
+  static const _minAcceptedMoveMeters = 6.0;
+  static const _maxWalkingSpikeMeters = 85.0;
+  static const _maxWalkingSpikeSpeedMps = 8.0;
 
   StreamSubscription<Position>? _positionSubscription;
   Timer? _ticker;
@@ -142,7 +159,7 @@ class RouteTrackingNotifier extends Notifier<RouteTrackingState> {
     }
   }
 
-  Future<void> stopAndSave() async {
+  Future<void> stopAndSave({String? title}) async {
     if (!state.isTracking || state.routeId == null || state.startedAt == null) {
       return;
     }
@@ -152,17 +169,18 @@ class RouteTrackingNotifier extends Notifier<RouteTrackingState> {
     _positionSubscription = null;
     _ticker?.cancel();
     _autosaveTimer?.cancel();
-    await _stopNotificationUpdates();
 
     try {
       final finalPosition = await _currentPositionWithFallback();
       if (finalPosition != null) {
         await _appendPosition(finalPosition, force: true);
       }
-      await _saveCurrentRoute(endTime: DateTime.now());
+      await _saveCurrentRoute(endTime: DateTime.now(), title: title);
       state = RouteTrackingState.initial();
     } catch (e) {
       state = state.copyWith(isSaving: false, error: e.toString());
+    } finally {
+      await _stopNotificationUpdates();
     }
   }
 
@@ -171,44 +189,81 @@ class RouteTrackingNotifier extends Notifier<RouteTrackingState> {
       return;
     }
 
-    if (!force && position.accuracy > 120) {
+    if (!force && position.accuracy > _maxAcceptedAccuracyMeters) {
       return;
     }
 
-    final nextPoint = RoutePoint(
-      position: LatLng(position.latitude, position.longitude),
-      timestamp: position.timestamp,
-      accuracy: position.accuracy,
-    );
-
+    final timestamp = position.timestamp;
+    var nextPosition = LatLng(position.latitude, position.longitude);
     final points = [...state.points];
     var totalDistance = state.totalDistanceMeters;
     if (points.isNotEmpty) {
       final lastPoint = points.last;
-      final delta = Geolocator.distanceBetween(
+      var delta = Geolocator.distanceBetween(
         lastPoint.position.latitude,
         lastPoint.position.longitude,
-        nextPoint.position.latitude,
-        nextPoint.position.longitude,
+        nextPosition.latitude,
+        nextPosition.longitude,
       );
 
-      if (!force && delta < 8) {
-        return;
-      }
-      if (!force && delta > 1200) {
-        return;
+      if (!force) {
+        final elapsedSeconds = max(
+          1.0,
+          timestamp.difference(lastPoint.timestamp).inMilliseconds / 1000,
+        );
+        final jitterFloor = max(
+          _minAcceptedMoveMeters,
+          min(
+            28.0,
+            (lastPoint.accuracy + position.accuracy).clamp(0, 80) * 0.35,
+          ),
+        );
+        if (delta < jitterFloor) {
+          return;
+        }
+
+        final calculatedSpeed = delta / elapsedSeconds;
+        final reportedSpeed = position.speed.isFinite ? position.speed : 0.0;
+        final looksLikeWalkingSpike =
+            delta > _maxWalkingSpikeMeters &&
+            elapsedSeconds <= 25 &&
+            calculatedSpeed > _maxWalkingSpikeSpeedMps &&
+            reportedSpeed <= _maxWalkingSpikeSpeedMps;
+        if (looksLikeWalkingSpike || delta > 1200) {
+          return;
+        }
+
+        if (delta < 90) {
+          nextPosition = _smoothedPosition(
+            lastPoint.position,
+            nextPosition,
+            _smoothingWeight(position.accuracy),
+          );
+          delta = Geolocator.distanceBetween(
+            lastPoint.position.latitude,
+            lastPoint.position.longitude,
+            nextPosition.latitude,
+            nextPosition.longitude,
+          );
+        }
       }
 
       totalDistance += delta;
     }
 
-    points.add(nextPoint);
+    points.add(
+      RoutePoint(
+        position: nextPosition,
+        timestamp: timestamp,
+        accuracy: position.accuracy,
+      ),
+    );
     final creatorId = _creatorId;
     if (creatorId != null) {
       unawaited(
         ref
             .read(firebaseServiceProvider)
-            .updateSharedUserLocation(creatorId, nextPoint.position),
+            .updateSharedUserLocation(creatorId, nextPosition),
       );
     }
     state = state.copyWith(
@@ -224,7 +279,24 @@ class RouteTrackingNotifier extends Notifier<RouteTrackingState> {
     }
   }
 
-  Future<void> _saveCurrentRoute({DateTime? endTime}) async {
+  LatLng _smoothedPosition(LatLng previous, LatLng current, double weight) {
+    return LatLng(
+      previous.latitude + (current.latitude - previous.latitude) * weight,
+      previous.longitude + (current.longitude - previous.longitude) * weight,
+    );
+  }
+
+  double _smoothingWeight(double accuracy) {
+    if (accuracy <= 12) {
+      return 0.78;
+    }
+    if (accuracy <= 25) {
+      return 0.58;
+    }
+    return 0.38;
+  }
+
+  Future<void> _saveCurrentRoute({DateTime? endTime, String? title}) async {
     if (_isWriting && endTime == null) {
       return;
     }
@@ -247,7 +319,7 @@ class RouteTrackingNotifier extends Notifier<RouteTrackingState> {
     try {
       final route = TravelRoute(
         id: state.routeId!,
-        title: _routeTitle(state.startedAt!),
+        title: _normalizedRouteTitle(title, state.startedAt!),
         creatorId: _creatorId!,
         startTime: state.startedAt!,
         endTime: endTime,
@@ -329,6 +401,7 @@ class RouteTrackingNotifier extends Notifier<RouteTrackingState> {
     if (defaultTargetPlatform == TargetPlatform.android) {
       try {
         await _notifications.cancel(id: _travelNotificationId);
+        await _notifications.cancelAll();
       } catch (_) {
         // Tracking cleanup should not fail because the notification plugin fails.
       }
@@ -435,8 +508,8 @@ class RouteTrackingNotifier extends Notifier<RouteTrackingState> {
     if (defaultTargetPlatform == TargetPlatform.android) {
       return AndroidSettings(
         accuracy: LocationAccuracy.best,
-        distanceFilter: 20,
-        intervalDuration: const Duration(seconds: 15),
+        distanceFilter: 8,
+        intervalDuration: const Duration(seconds: 5),
         foregroundNotificationConfig: const ForegroundNotificationConfig(
           notificationTitle: '여행기록중',
           notificationText: '비비랑 우리가 이동 경로를 기록하고 있어요.',
@@ -452,7 +525,7 @@ class RouteTrackingNotifier extends Notifier<RouteTrackingState> {
         defaultTargetPlatform == TargetPlatform.macOS) {
       return AppleSettings(
         accuracy: LocationAccuracy.best,
-        distanceFilter: 20,
+        distanceFilter: 8,
         activityType: ActivityType.otherNavigation,
         pauseLocationUpdatesAutomatically: false,
         showBackgroundLocationIndicator: true,
@@ -462,7 +535,7 @@ class RouteTrackingNotifier extends Notifier<RouteTrackingState> {
 
     return const LocationSettings(
       accuracy: LocationAccuracy.high,
-      distanceFilter: 20,
+      distanceFilter: 8,
     );
   }
 
@@ -473,6 +546,14 @@ class RouteTrackingNotifier extends Notifier<RouteTrackingState> {
   String _routeTitle(DateTime startedAt) {
     String twoDigits(int value) => value.toString().padLeft(2, '0');
     return '${startedAt.year}.${twoDigits(startedAt.month)}.${twoDigits(startedAt.day)} 여행 기록';
+  }
+
+  String _normalizedRouteTitle(String? title, DateTime startedAt) {
+    final normalized = title?.trim();
+    if (normalized != null && normalized.isNotEmpty) {
+      return normalized;
+    }
+    return _routeTitle(startedAt);
   }
 
   String _formatElapsedForNotification(Duration duration) {

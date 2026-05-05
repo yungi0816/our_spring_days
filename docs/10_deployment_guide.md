@@ -34,6 +34,7 @@ flutter run \
   --dart-define=PARTNER_A_ID=PARTNER_A \
   --dart-define=PARTNER_B_ID=PARTNER_B \
   --dart-define=COUPLE_ID=DEMO_COUPLE \
+  --dart-define=APP_PACKAGE_NAME=com.bibiandus.ourspringdays \
   --dart-define=FIREBASE_ANDROID_API_KEY=YOUR_FIREBASE_KEY \
   --dart-define=FIREBASE_ANDROID_APP_ID=YOUR_APP_ID \
   --dart-define=FIREBASE_MESSAGING_SENDER_ID=YOUR_SENDER_ID \

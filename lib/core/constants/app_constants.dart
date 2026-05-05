@@ -20,5 +20,10 @@ class AppConstants {
     'GOOGLE_MAPS_API_KEY',
   );
 
+  static const String appPackageName = String.fromEnvironment(
+    'APP_PACKAGE_NAME',
+    defaultValue: 'com.bibiandus.ourspringdays',
+  );
+
   // AI 비서는 OpenAI API Key 입력 후 사용할 수 있습니다.
 }

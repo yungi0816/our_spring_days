@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:uuid/uuid.dart';
 import '../constants/app_constants.dart';
 import 'common_providers.dart';
 
@@ -10,31 +11,46 @@ String otherPartnerId(String userId) {
       : AppConstants.partnerAId;
 }
 
-// 현재 사용자 ID 관리
+final deviceKeyProvider = Provider<String>((ref) {
+  const key = 'device_install_key';
+  final prefs = ref.watch(sharedPreferencesProvider);
+  final savedKey = prefs.getString(key);
+  if (savedKey != null && savedKey.isNotEmpty) {
+    return savedKey;
+  }
+
+  final newKey = const Uuid().v4();
+  prefs.setString(key, newKey);
+  return newKey;
+});
+
+// 현재 로그인 사용자 ID 관리
 class UserNotifier extends Notifier<String> {
-  static const _key = 'selected_user_id';
-  static const _defaultUser = AppConstants.partnerAId;
-  static const _validUsers = {AppConstants.partnerAId, AppConstants.partnerBId};
+  static const _key = 'authenticated_user_id';
 
   @override
   String build() {
     final prefs = ref.watch(sharedPreferencesProvider);
-    final savedUser = prefs.getString(_key);
-
-    if (savedUser != null && _validUsers.contains(savedUser)) {
-      return savedUser;
-    }
-
-    return _defaultUser;
+    return prefs.getString(_key) ?? '';
   }
 
-  void setUser(String userId) {
-    if (!_validUsers.contains(userId)) {
+  void signIn(String userId) {
+    final cleanUserId = userId.trim();
+    if (cleanUserId.isEmpty) {
       return;
     }
 
-    state = userId;
-    ref.read(sharedPreferencesProvider).setString(_key, userId);
+    state = cleanUserId;
+    ref.read(sharedPreferencesProvider).setString(_key, cleanUserId);
+  }
+
+  void setUser(String userId) {
+    signIn(userId);
+  }
+
+  void signOut() {
+    state = '';
+    ref.read(sharedPreferencesProvider).remove(_key);
   }
 }
 

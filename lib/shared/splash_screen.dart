@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../core/providers/common_providers.dart';
+import '../core/providers/user_provider.dart';
 import '../core/utils/translation_service.dart';
 
 class SplashScreen extends ConsumerStatefulWidget {
@@ -30,12 +32,36 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
       }
     });
 
-    // 3초 후 메인 화면으로 이동
+    // 3초 후 로그인 상태를 확인하고 이동
     _navigationTimer = Timer(const Duration(seconds: 3), () {
       if (mounted) {
-        context.go('/main');
+        _navigateByLoginState();
       }
     });
+  }
+
+  Future<void> _navigateByLoginState() async {
+    final userId = ref.read(currentUserProvider);
+    final deviceKey = ref.read(deviceKeyProvider);
+    if (userId.isEmpty) {
+      if (mounted) {
+        context.go('/auth');
+      }
+      return;
+    }
+
+    final authorized = await ref
+        .read(firebaseServiceProvider)
+        .isDeviceAuthorized(userId: userId, deviceKey: deviceKey);
+    if (!mounted) {
+      return;
+    }
+    if (authorized) {
+      context.go('/main');
+    } else {
+      ref.read(currentUserProvider.notifier).signOut();
+      context.go('/auth');
+    }
   }
 
   @override

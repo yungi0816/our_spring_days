@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import '../features/record/record_screen.dart';
 import '../features/map/map_screen.dart';
@@ -92,6 +93,7 @@ class MainScreen extends ConsumerWidget {
     WidgetRef ref,
     String? url,
     String userId,
+    UserProfile profile,
   ) {
     final tr = ref.read(translationProvider);
     showDialog(
@@ -109,12 +111,12 @@ class MainScreen extends ConsumerWidget {
                       key: ValueKey(url),
                       fit: BoxFit.contain,
                       errorBuilder: (context, error, stackTrace) => Image.asset(
-                        _defaultProfileAsset(userId),
+                        _defaultProfileAsset(userId, profile),
                         fit: BoxFit.contain,
                       ),
                     )
                   : Image.asset(
-                      _defaultProfileAsset(userId),
+                      _defaultProfileAsset(userId, profile),
                       fit: BoxFit.contain,
                     ),
             ),
@@ -179,8 +181,13 @@ class MainScreen extends ConsumerWidget {
         ),
         leading: userProfileAsync.when(
           data: (profile) => GestureDetector(
-            onTap: () =>
-                _showProfileDialog(context, ref, profile.photoUrl, currentUser),
+            onTap: () => _showProfileDialog(
+              context,
+              ref,
+              profile.photoUrl,
+              currentUser,
+              profile,
+            ),
             child: Padding(
               padding: const EdgeInsets.all(8.0),
               child: ClipOval(
@@ -194,12 +201,12 @@ class MainScreen extends ConsumerWidget {
                           fit: BoxFit.cover,
                           errorBuilder: (context, error, stackTrace) =>
                               Image.asset(
-                                _defaultProfileAsset(currentUser),
+                                _defaultProfileAsset(currentUser, profile),
                                 fit: BoxFit.cover,
                               ),
                         )
                       : Image.asset(
-                          _defaultProfileAsset(currentUser),
+                          _defaultProfileAsset(currentUser, profile),
                           fit: BoxFit.cover,
                         ),
                 ),
@@ -213,26 +220,6 @@ class MainScreen extends ConsumerWidget {
           error: (error, stackTrace) => const Icon(Icons.error),
         ),
         actions: [
-          // 사용자 전환 버튼
-          SizedBox(
-            width: 86,
-            child: TextButton(
-              onPressed: () {
-                final newUser = otherPartnerId(currentUser);
-                ref.read(currentUserProvider.notifier).setUser(newUser);
-              },
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(
-                  currentUser,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: Colors.pinkAccent,
-                  ),
-                ),
-              ),
-            ),
-          ),
           // 언어 변경 토글
           SizedBox(
             width: 48,
@@ -245,6 +232,14 @@ class MainScreen extends ConsumerWidget {
                     : const Locale('ko');
                 ref.read(localeProvider.notifier).setLocale(newLocale);
               },
+            ),
+          ),
+          SizedBox(
+            width: 44,
+            child: IconButton(
+              tooltip: '설정',
+              icon: const Icon(Icons.settings_outlined, size: 22),
+              onPressed: () => context.push('/settings'),
             ),
           ),
         ],
@@ -293,7 +288,13 @@ class MainScreen extends ConsumerWidget {
     );
   }
 
-  String _defaultProfileAsset(String userId) {
+  String _defaultProfileAsset(String userId, [UserProfile? profile]) {
+    if (profile?.gender == '여성') {
+      return 'images/girl.png';
+    }
+    if (profile?.gender == '남성') {
+      return 'images/boy.png';
+    }
     return isPartnerAUser(userId) ? 'images/girl.png' : 'images/boy.png';
   }
 }

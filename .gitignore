@@ -62,3 +62,6 @@ GoogleService-Info.plist
 key.properties
 *.jks
 *.keystore
+.firebaserc
+.firebase/
+firebase-debug.log

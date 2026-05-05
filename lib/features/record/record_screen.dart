@@ -9,6 +9,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../core/providers/common_providers.dart';
 import '../../core/providers/mission_provider.dart';
+import '../../core/providers/route_models.dart';
 import '../../core/providers/route_provider.dart';
 import '../../core/providers/user_provider.dart';
 import '../../core/utils/translation_service.dart';
@@ -19,6 +20,9 @@ class RecordScreen extends ConsumerStatefulWidget {
   @override
   ConsumerState<RecordScreen> createState() => _RecordScreenState();
 }
+
+String _recordText(Locale locale, String ko, String ja) =>
+    locale.languageCode == 'ja' ? ja : ko;
 
 class _RecordScreenState extends ConsumerState<RecordScreen> {
   final _controller = TextEditingController();
@@ -50,12 +54,163 @@ class _RecordScreenState extends ConsumerState<RecordScreen> {
   }
 
   Future<void> _stopRouteTracking() async {
-    await ref.read(routeTrackingProvider.notifier).stopAndSave();
+    final result = await _askRouteTitleAndGroup();
+    if (result == null) {
+      return;
+    }
+    if (!mounted) return;
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+    final routeId = ref.read(routeTrackingProvider).routeId;
+    await ref
+        .read(routeTrackingProvider.notifier)
+        .stopAndSave(title: result.title);
     if (!mounted) return;
     final error = ref.read(routeTrackingProvider).error;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(error ?? '여행 기록이 저장되었습니다.')));
+    if (error == null && routeId != null && result.groupId != null) {
+      await ref.read(firebaseServiceProvider).updateTravelRouteFields(routeId, {
+        'groupId': result.groupId,
+      });
+    }
+    if (!mounted) return;
+    final locale = ref.read(translationProvider).locale;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          error ?? _recordText(locale, '여행 기록이 저장되었습니다.', '旅行記録を保存しました。'),
+        ),
+      ),
+    );
+  }
+
+  Future<({String title, String? groupId})?> _askRouteTitleAndGroup() async {
+    final locale = ref.read(translationProvider).locale;
+    final startedAt =
+        ref.read(routeTrackingProvider).startedAt ?? DateTime.now();
+    final controller = TextEditingController(
+      text:
+          '${DateFormat('yyyy.MM.dd').format(startedAt)} ${_recordText(locale, '여행 기록', '旅行記録')}',
+    );
+    final groupsAsync = ref.read(routeGroupStreamProvider);
+    final groups = groupsAsync.maybeWhen(
+      data: (g) => g,
+      orElse: () => const <RouteGroup>[],
+    );
+    String? selectedGroupId;
+
+    void closeDialog(
+      BuildContext dialogContext, [
+      ({String title, String? groupId})? value,
+    ]) {
+      FocusScope.of(dialogContext).unfocus();
+      Navigator.of(dialogContext, rootNavigator: true).pop(value);
+    }
+
+    final result = await showDialog<({String title, String? groupId})>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text(_recordText(locale, '여행 기록 저장', '旅行記録を保存')),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: controller,
+                autofocus: true,
+                textInputAction: TextInputAction.done,
+                decoration: InputDecoration(
+                  labelText: _recordText(locale, '제목', 'タイトル'),
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              if (groups.isEmpty)
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    final nameCtrl = TextEditingController();
+                    final name = await showDialog<String>(
+                      context: dialogContext,
+                      builder: (ctx) => AlertDialog(
+                        title: Text(
+                          _recordText(locale, '새 그룹 생성', '新しいグループを作成'),
+                        ),
+                        content: TextField(
+                          controller: nameCtrl,
+                          autofocus: true,
+                          decoration: InputDecoration(
+                            labelText: _recordText(locale, '그룹 이름', 'グループ名'),
+                            border: const OutlineInputBorder(),
+                          ),
+                          onSubmitted: (_) =>
+                              Navigator.pop(ctx, nameCtrl.text.trim()),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx),
+                            child: Text(_recordText(locale, '취소', 'キャンセル')),
+                          ),
+                          FilledButton(
+                            onPressed: () =>
+                                Navigator.pop(ctx, nameCtrl.text.trim()),
+                            child: Text(_recordText(locale, '생성', '作成')),
+                          ),
+                        ],
+                      ),
+                    );
+                    nameCtrl.dispose();
+                    if (name == null || name.isEmpty) return;
+                    final group = RouteGroup(
+                      id: const Uuid().v4(),
+                      name: name,
+                      createdAt: DateTime.now(),
+                    );
+                    await ref
+                        .read(firebaseServiceProvider)
+                        .addRouteGroup(group);
+                    setDialogState(() => selectedGroupId = group.id);
+                  },
+                  icon: const Icon(Icons.create_new_folder_outlined),
+                  label: Text(_recordText(locale, '새 그룹 생성', '新しいグループを作成')),
+                )
+              else
+                DropdownButtonFormField<String?>(
+                  initialValue: selectedGroupId,
+                  decoration: InputDecoration(
+                    labelText: _recordText(locale, '그룹', 'グループ'),
+                    border: const OutlineInputBorder(),
+                  ),
+                  items: [
+                    DropdownMenuItem(
+                      value: null,
+                      child: Text(_recordText(locale, '그룹 없음', 'グループなし')),
+                    ),
+                    ...groups.map(
+                      (g) => DropdownMenuItem(value: g.id, child: Text(g.name)),
+                    ),
+                  ],
+                  onChanged: (v) => setDialogState(() => selectedGroupId = v),
+                ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => closeDialog(dialogContext),
+              child: Text(_recordText(locale, '취소', 'キャンセル')),
+            ),
+            FilledButton(
+              onPressed: () => closeDialog(dialogContext, (
+                title: controller.text.trim(),
+                groupId: selectedGroupId,
+              )),
+              child: Text(_recordText(locale, '저장', '保存')),
+            ),
+          ],
+        ),
+      ),
+    );
+    await WidgetsBinding.instance.endOfFrame;
+    controller.dispose();
+    return result;
   }
 
   Future<void> _showMissionComposer() async {
@@ -105,15 +260,20 @@ class _RecordScreenState extends ConsumerState<RecordScreen> {
 
   Future<bool> _addMission() async {
     if (_controller.text.trim().isEmpty) return false;
+    final locale = ref.read(translationProvider).locale;
 
     final deadlineHours = _parseDeadlineHours(
       _deadlineOption,
       _customDeadlineController.text,
     );
     if (deadlineHours == _invalidDeadlineHours) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('제한 시간은 숫자로 입력해 주세요.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _recordText(locale, '제한 시간은 숫자로 입력해 주세요.', '制限時間は数字で入力してください。'),
+          ),
+        ),
+      );
       return false;
     }
 
@@ -132,9 +292,13 @@ class _RecordScreenState extends ConsumerState<RecordScreen> {
         );
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text('사진 업로드 실패: $e')));
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                '${_recordText(locale, '사진 업로드 실패', '写真アップロード失敗')}: $e',
+              ),
+            ),
+          );
           setState(() => _isLoading = false);
         }
         return false;
@@ -158,16 +322,20 @@ class _RecordScreenState extends ConsumerState<RecordScreen> {
       _controller.clear();
       setState(() => _selectedImage = null);
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('미션을 등록했어요.')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_recordText(locale, '미션을 등록했어요.', 'ミッションを登録しました。')),
+          ),
+        );
       }
       return true;
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('등록 실패: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${_recordText(locale, '등록 실패', '登録失敗')}: $e'),
+          ),
+        );
       }
       return false;
     } finally {
@@ -219,13 +387,14 @@ class _RecordScreenState extends ConsumerState<RecordScreen> {
                 const SizedBox(height: 8),
                 _RouteTrackingStatus(
                   state: routeTracking,
+                  locale: tr.locale,
                   onStop: routeTracking.isSaving ? null : _stopRouteTracking,
                 ),
               ],
             ),
           ),
           if (_isLoading)
-            _ProgressOverlay(locale: tr.locale)
+            _ProgressOverlay(locale: tr.locale, positioned: false)
           else
             const SizedBox.shrink(),
           Padding(
@@ -530,29 +699,32 @@ class _MissionComposerSheetState extends ConsumerState<_MissionComposerSheet> {
 
 class _ProgressOverlay extends StatelessWidget {
   final Locale locale;
+  final bool positioned;
 
-  const _ProgressOverlay({required this.locale});
+  const _ProgressOverlay({required this.locale, this.positioned = true});
 
   @override
   Widget build(BuildContext context) {
     final asset = locale.languageCode == 'ja'
         ? 'images/ing_jp.png'
         : 'images/ing_kor.png';
-    return Positioned.fill(
-      child: Container(
-        color: Colors.white.withValues(alpha: 0.82),
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Image.asset(asset, height: 92, fit: BoxFit.contain),
-              const SizedBox(height: 12),
-              const SizedBox(width: 180, child: LinearProgressIndicator()),
-            ],
-          ),
+    final child = Container(
+      color: Colors.white.withValues(alpha: 0.82),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Image.asset(asset, height: 92, fit: BoxFit.contain),
+            const SizedBox(height: 12),
+            const SizedBox(width: 180, child: LinearProgressIndicator()),
+          ],
         ),
       ),
     );
+    if (!positioned) {
+      return SizedBox(height: 126, width: double.infinity, child: child);
+    }
+    return Positioned.fill(child: child);
   }
 }
 
@@ -613,6 +785,7 @@ class _MissionCardState extends ConsumerState<MissionCard> {
   Future<void> _attachProofImage() async {
     final mission = widget.mission;
     final currentUserId = ref.read(currentUserProvider);
+    final locale = ref.read(translationProvider).locale;
     final picker = ImagePicker();
     final proof = await picker.pickImage(source: ImageSource.gallery);
     if (proof == null) return;
@@ -627,15 +800,21 @@ class _MissionCardState extends ConsumerState<MissionCard> {
       );
       await firebaseService.completeMission(mission.id, url, currentUserId);
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('미션 사진이 첨부되었습니다.')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              _recordText(locale, '미션 사진이 첨부되었습니다.', 'ミッション写真を添付しました。'),
+            ),
+          ),
+        );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('첨부 실패: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${_recordText(locale, '첨부 실패', '添付失敗')}: $e'),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _isWorking = false);
@@ -709,7 +888,11 @@ class _MissionCardState extends ConsumerState<MissionCard> {
                   );
                   if (deadlineHours == _invalidDeadlineHours) {
                     setDialogState(
-                      () => validationError = '제한 시간을 숫자로 입력해 주세요.',
+                      () => validationError = _recordText(
+                        tr.locale,
+                        '제한 시간을 숫자로 입력해 주세요.',
+                        '制限時間は数字で入力してください。',
+                      ),
                     );
                     return;
                   }
@@ -738,9 +921,11 @@ class _MissionCardState extends ConsumerState<MissionCard> {
           .updateMission(widget.mission.id, result.content, result.deadline);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('수정 실패: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${_recordText(tr.locale, '수정 실패', '修正失敗')}: $e'),
+          ),
+        );
       }
     }
   }
@@ -878,16 +1063,25 @@ class _MissionCardState extends ConsumerState<MissionCard> {
 
 class _RouteTrackingStatus extends StatelessWidget {
   final RouteTrackingState state;
+  final Locale locale;
   final VoidCallback? onStop;
 
-  const _RouteTrackingStatus({required this.state, required this.onStop});
+  const _RouteTrackingStatus({
+    required this.state,
+    required this.locale,
+    required this.onStop,
+  });
 
   @override
   Widget build(BuildContext context) {
     final isTracking = state.isTracking;
     final text = isTracking
-        ? '현재 여행 기록중 ${_formatRouteDuration(state.elapsed)}째 · ${_formatRouteDistance(state.totalDistanceMeters)} 이동중'
-        : '현재 기록 중인 여행이 없어요.';
+        ? _recordText(
+            locale,
+            '현재 여행 기록중 ${_formatRouteDuration(state.elapsed, locale)}째 · ${_formatRouteDistance(state.totalDistanceMeters)} 이동중',
+            '現在旅行を記録中 ${_formatRouteDuration(state.elapsed, locale)} · ${_formatRouteDistance(state.totalDistanceMeters)} 移動中',
+          )
+        : _recordText(locale, '현재 기록 중인 여행이 없어요.', '現在記録中の旅行はありません。');
 
     return Container(
       width: double.infinity,
@@ -909,7 +1103,13 @@ class _RouteTrackingStatus extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              state.isSaving ? '여행 기록을 처리하는 중입니다...' : text,
+              state.isSaving
+                  ? _recordText(
+                      locale,
+                      '여행 기록을 처리하는 중입니다...',
+                      '旅行記録を処理しています...',
+                    )
+                  : text,
               style: TextStyle(
                 fontSize: 12,
                 color: isTracking ? Colors.pink[700] : Colors.grey[700],
@@ -918,7 +1118,10 @@ class _RouteTrackingStatus extends StatelessWidget {
             ),
           ),
           if (isTracking)
-            TextButton(onPressed: onStop, child: const Text('기록 중지')),
+            TextButton(
+              onPressed: onStop,
+              child: Text(_recordText(locale, '기록 중지', '記録を停止')),
+            ),
         ],
       ),
     );
@@ -1033,13 +1236,14 @@ class _DeadlinePicker extends StatelessWidget {
   }
 }
 
-String _formatRouteDuration(Duration duration) {
+String _formatRouteDuration(Duration duration, Locale locale) {
   final hours = duration.inHours;
   final minutes = duration.inMinutes.remainder(60);
+  final isJa = locale.languageCode == 'ja';
   if (hours > 0) {
-    return '$hours시간 $minutes분';
+    return isJa ? '$hours時間 $minutes分' : '$hours시간 $minutes분';
   }
-  return '$minutes분';
+  return isJa ? '$minutes分' : '$minutes분';
 }
 
 String _formatRouteDistance(double meters) {

@@ -78,7 +78,8 @@ flutter run \
   --dart-define=CLOUDINARY_UPLOAD_PRESET=YOUR_UPLOAD_PRESET \
   --dart-define=PARTNER_A_ID=PARTNER_A \
   --dart-define=PARTNER_B_ID=PARTNER_B \
-  --dart-define=COUPLE_ID=DEMO_COUPLE
+  --dart-define=COUPLE_ID=DEMO_COUPLE \
+  --dart-define=APP_PACKAGE_NAME=com.bibiandus.ourspringdays
 ```
 
 Android에서는 `android/local.properties`에 아래 값을 추가합니다.
