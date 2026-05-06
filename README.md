@@ -1,8 +1,19 @@
 # 비비랑 우리
 
+[![Flutter](https://img.shields.io/badge/Flutter-02569B?style=flat-square&logo=flutter&logoColor=white)](https://flutter.dev/)
+[![Dart](https://img.shields.io/badge/Dart-0175C2?style=flat-square&logo=dart&logoColor=white)](https://dart.dev/)
+[![Firebase](https://img.shields.io/badge/Firebase-FFCA28?style=flat-square&logo=firebase&logoColor=111827)](https://firebase.google.com/)
+[![Google Maps](https://img.shields.io/badge/Google%20Maps-4285F4?style=flat-square&logo=googlemaps&logoColor=white)](https://developers.google.com/maps)
+
 강아지와 함께 여행하는 커플이 이동 루트, 애견 동반 장소, 사진, 미션을 한곳에 남길 수 있도록 만든 Flutter 앱입니다.
 
 일반 지도 앱은 장소 검색에 강하고, 앨범 앱은 사진 보관에 강하지만 “그날 어디를 걸었고, 강아지와 어디에 들렀고, 어떤 사진을 남겼는지”를 같이 보기 어렵습니다. 이 앱은 커플이 여행을 다녀온 뒤에도 지도 위에서 그날의 흐름을 다시 볼 수 있게 하는 데 초점을 맞췄습니다.
+
+## 이런 분에게 유용합니다
+
+- 여행 루트, 사진, 미션을 하나의 앱 흐름으로 설계하는 Flutter 예제를 찾는 분
+- Google Maps, Places, Firebase, Cloudinary를 앱에서 함께 연결하는 구조가 궁금한 분
+- 커플/가족/동행자 단위의 위치 기반 기록 앱을 만들고 싶은 분
 
 ## ✨ 주요 기능
 
@@ -122,3 +133,13 @@ flutter build apk --release
 ## 📌 앞으로 할 일
 
 자세한 항목은 [TODO.md](TODO.md)에 정리했습니다.
+
+## 의견과 기여
+
+- 버그나 실행 문제는 [Issues](https://github.com/yungi0816/our_spring_days/issues)에 남겨주세요.
+- 기능 제안, 제품 방향, UX 피드백은 [Discussions](https://github.com/yungi0816/our_spring_days/discussions)에 남겨주세요.
+- 작은 문서 수정이나 예제 개선 PR은 환영합니다.
+
+## 라이선스
+
+현재 명시 라이선스는 없습니다. 외부 재사용을 적극적으로 허용하려면 MIT 또는 Apache-2.0 같은 오픈소스 라이선스를 추가하는 것을 권장합니다.
