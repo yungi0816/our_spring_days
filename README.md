@@ -1,39 +1,43 @@
-# 비비랑 우리
+# Our Spring Days
+
+[한국어 README](README_KOR.md)
 
 [![Flutter](https://img.shields.io/badge/Flutter-02569B?style=flat-square&logo=flutter&logoColor=white)](https://flutter.dev/)
 [![Dart](https://img.shields.io/badge/Dart-0175C2?style=flat-square&logo=dart&logoColor=white)](https://dart.dev/)
 [![Firebase](https://img.shields.io/badge/Firebase-FFCA28?style=flat-square&logo=firebase&logoColor=111827)](https://firebase.google.com/)
 [![Google Maps](https://img.shields.io/badge/Google%20Maps-4285F4?style=flat-square&logo=googlemaps&logoColor=white)](https://developers.google.com/maps)
 
-강아지와 함께 여행하는 커플이 이동 루트, 애견 동반 장소, 사진, 미션을 한곳에 남길 수 있도록 만든 Flutter 앱입니다.
+`Our Spring Days` is a Flutter travel memory map for couples who travel with a dog. It brings routes, pet-friendly places, photos, partner markers, and mission records into one app flow.
 
-일반 지도 앱은 장소 검색에 강하고, 앨범 앱은 사진 보관에 강하지만 “그날 어디를 걸었고, 강아지와 어디에 들렀고, 어떤 사진을 남겼는지”를 같이 보기 어렵습니다. 이 앱은 커플이 여행을 다녀온 뒤에도 지도 위에서 그날의 흐름을 다시 볼 수 있게 하는 데 초점을 맞췄습니다.
+Most map apps are good at place search, and most album apps are good at storing photos. This project focuses on the missing middle: helping a couple revisit where they walked, where they stopped, what they did, and which memories belong to that trip.
 
-## 이런 분에게 유용합니다
+## Who This Is For
 
-- 여행 루트, 사진, 미션을 하나의 앱 흐름으로 설계하는 Flutter 예제를 찾는 분
-- Google Maps, Places, Firebase, Cloudinary를 앱에서 함께 연결하는 구조가 궁금한 분
-- 커플/가족/동행자 단위의 위치 기반 기록 앱을 만들고 싶은 분
+- Flutter developers looking for a route, photo, mission, and map app example
+- Builders connecting Google Maps, Places, Firebase, Cloudinary, and local device APIs
+- Product-minded developers designing location-based memories for couples, families, or travel groups
 
-## ✨ 주요 기능
+## Features
 
-- 🎯 미션 등록, 제한 시간 설정, 사진 인증
-- 🐶 애견 동반 맛집·카페 검색 및 네이버지도 앱 연동
-- 💙❤️ 파트너별 하트 마커 저장, 수정, 삭제
-- 📍 서로의 현재 위치 공유
-- 🧭 GPS 기반 여행 루트 기록, 거리·시간·방문 후보 장소 확인
-- 🖼️ 앨범 사진 다중 업로드, 미션 인증 사진 자동 정리
-- 🇰🇷🇯🇵 한국어 / 일본어 UI 지원
+- Mission creation with time limits and photo verification
+- Pet-friendly restaurant and cafe search with Naver Map deep links
+- Partner-specific heart markers with create, edit, and delete flows
+- Current location sharing between partners
+- GPS route recording with distance, duration, and candidate stop detection
+- Multi-photo album upload and mission photo organization
+- Korean and Japanese UI support
 
-## 🛠️ 기술 스택
+## Tech Stack
 
 ### App
+
 - Flutter
 - Dart
 - Riverpod
 - GoRouter
 
 ### Backend / Infra
+
 - Firebase Core
 - Cloud Firestore
 - Cloudinary unsigned upload preset
@@ -42,12 +46,13 @@
 - Naver Map URL Scheme
 
 ### Device
+
 - Geolocator
 - Image Picker
 - Local Notifications
 - Gallery Save
 
-## 📁 프로젝트 구조
+## Project Structure
 
 ```text
 lib/
@@ -67,7 +72,7 @@ lib/
 └─ shared/
 ```
 
-## 🚀 실행 방법
+## Quick Start
 
 ```bash
 flutter pub get
@@ -82,46 +87,45 @@ flutter run \
   --dart-define=APP_PACKAGE_NAME=com.bibiandus.ourspringdays
 ```
 
-Android에서는 `android/local.properties`에 아래 값을 추가합니다.
+For Android, add the Google Maps key to `android/local.properties`.
 
 ```properties
 GOOGLE_MAPS_API_KEY=YOUR_KEY
 ```
 
-`android/local.properties`도 로컬 설정 파일이라 커밋하지 않습니다.
+`android/local.properties` is local configuration and should not be committed.
 
-Firebase Android 설정은 `android/app/google-services.json`을 로컬에만 둡니다. 이 파일은 공개 저장소에 올리지 않습니다.
+Firebase Android config should be stored locally at `android/app/google-services.json`. Do not commit that file to a public repository.
 
-## 🔐 공개 저장소 주의사항
+## Public Repository Safety
 
-아래 값은 GitHub에 올리지 않습니다.
+Do not commit:
 
-- Firebase 프로젝트 ID, 앱 ID, API Key
-- Google Maps / Places API Key
-- Cloudinary Cloud Name, Upload Preset
-- 실제 사용자 식별값, 개인 위치 기록, 실사용 사진
-- 릴리즈 APK, AAB 파일
+- Firebase project IDs, app IDs, or API keys
+- Google Maps / Places API keys
+- Cloudinary cloud names or upload presets
+- Real user identifiers, private location history, or personal photos
+- Release APK or AAB files
 
-예시 설정은 문서에만 남기고 실제 값은 `--dart-define`, `local.properties`, Firebase 설정 파일로 주입합니다.
-빌드 설정 예시는 [dart_defines.example.json](dart_defines.example.json)에 정리했습니다.
+Example build configuration is documented in [dart_defines.example.json](dart_defines.example.json).
 
-## 📚 문서
+## Documentation
 
-- [프로젝트 개요](docs/00_project_overview.md)
-- [요구사항 정의서](docs/01_requirements.md)
-- [사용자 시나리오](docs/02_user_scenarios.md)
-- [기능 명세서](docs/03_feature_spec.md)
-- [시스템 아키텍처](docs/04_architecture.md)
-- [데이터베이스 설계서](docs/05_database_design.md)
-- [API / 외부 연동 명세서](docs/06_api_spec.md)
-- [UI / UX 설계서](docs/07_ui_ux_design.md)
-- [개발 계획서](docs/08_development_plan.md)
-- [테스트 계획서](docs/09_test_plan.md)
-- [배포 가이드](docs/10_deployment_guide.md)
-- [트러블슈팅](docs/11_troubleshooting.md)
-- [프로젝트 회고](docs/12_retrospective.md)
+- [Project overview](docs/00_project_overview.md)
+- [Requirements](docs/01_requirements.md)
+- [User scenarios](docs/02_user_scenarios.md)
+- [Feature specification](docs/03_feature_spec.md)
+- [Architecture](docs/04_architecture.md)
+- [Database design](docs/05_database_design.md)
+- [API / integration spec](docs/06_api_spec.md)
+- [UI / UX design](docs/07_ui_ux_design.md)
+- [Development plan](docs/08_development_plan.md)
+- [Test plan](docs/09_test_plan.md)
+- [Deployment guide](docs/10_deployment_guide.md)
+- [Troubleshooting](docs/11_troubleshooting.md)
+- [Retrospective](docs/12_retrospective.md)
 
-## ✅ 검증
+## Verification
 
 ```bash
 flutter analyze
@@ -129,18 +133,18 @@ flutter test
 flutter build apk --release
 ```
 
-현재 테스트는 Provider 동작과 앱 로드 스모크 테스트를 중심으로 구성되어 있습니다.
+Current tests focus on provider behavior and app-load smoke coverage.
 
-## 📌 앞으로 할 일
+## Roadmap
 
-자세한 항목은 [TODO.md](TODO.md)에 정리했습니다.
+See [TODO.md](TODO.md) for planned improvements.
 
-## 의견과 기여
+## Contributing
 
-- 버그나 실행 문제는 [Issues](https://github.com/yungi0816/our_spring_days/issues)에 남겨주세요.
-- 기능 제안, 제품 방향, UX 피드백은 [Discussions](https://github.com/yungi0816/our_spring_days/discussions)에 남겨주세요.
-- 작은 문서 수정이나 예제 개선 PR은 환영합니다.
+- Report bugs or setup problems in [Issues](https://github.com/yungi0816/our_spring_days/issues).
+- Share product direction, UX feedback, or feature ideas in [Discussions](https://github.com/yungi0816/our_spring_days/discussions).
+- Small documentation fixes and focused example improvements are welcome as pull requests.
 
-## 라이선스
+## License
 
-현재 명시 라이선스는 없습니다. 외부 재사용을 적극적으로 허용하려면 MIT 또는 Apache-2.0 같은 오픈소스 라이선스를 추가하는 것을 권장합니다.
+No explicit license is currently provided. If this project is intended for open reuse, adding MIT or Apache-2.0 is recommended.
